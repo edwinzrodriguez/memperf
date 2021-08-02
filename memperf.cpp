@@ -9,6 +9,8 @@
 #include <limits.h>
 #include <pthread.h>
 #include <sys/sysinfo.h>
+#include <string>
+#include <errno.h>
 
 
 
@@ -16,6 +18,377 @@
 #define ASSERT assert
 #endif
 #define USECS_PER_SECOND	1000000UL
+
+
+#ifndef _countof
+#define _countof(x) (sizeof(x) / sizeof(x[0]))
+#endif
+
+#ifndef BDIO_STRINGIZE1
+#       define BDIO_STRINGIZE1(x) #x
+#endif
+#ifndef BDIO_STRINGIZE
+#       define BDIO_STRINGIZE(x) BDIO_STRINGIZE1(x)
+#endif
+#define BDIO_API
+#define BD_sscanf sscanf
+typedef int BDError ;
+static const BDError BD_SUCCESS = 0 ;
+
+
+BDError BD_GetError(void)
+{
+	return errno ;
+}
+
+/**
+ *  Enumerated Type for thread priority
+ */
+enum ThreadPriority 
+{
+	PRIORITY_UNKNOWN = -1,  /**< Unspecified  */
+	PRIORITY_MAX,      /**< The maximum possible priority  */
+	PRIORITY_HIGH,     /**< A high (but not max) setting   */
+	PRIORITY_NOMINAL,  /**< An average priority            */
+	PRIORITY_LOW,      /**< A low (but not min) setting    */
+	PRIORITY_MIN,      /**< The miniumum possible priority */
+	PRIORITY_DEFAULT   /**< Priority scheduling default    */
+};
+
+#define PRIORITY_UNKNOWN_STR      BDIO_STRINGIZE(PRIORITY_UNKNOWN)
+#define PRIORITY_MAX_STR          BDIO_STRINGIZE(PRIORITY_MAX)
+#define PRIORITY_HIGH_STR         BDIO_STRINGIZE(PRIORITY_HIGH)
+#define PRIORITY_NOMINAL_STR      BDIO_STRINGIZE(PRIORITY_NOMINAL)
+#define PRIORITY_LOW_STR          BDIO_STRINGIZE(PRIORITY_LOW)
+#define PRIORITY_MIN_STR          BDIO_STRINGIZE(PRIORITY_MIN)
+#define PRIORITY_DEFAULT_STR      BDIO_STRINGIZE(PRIORITY_DEFAULT)
+
+/**
+ *  Enumerated Type for thread scheduling policy
+ */
+enum ThreadPolicy 
+{
+	SCHEDULE_UNKNOWN = -1,     /**< Unspecified                            */
+	SCHEDULE_TIME_SHARE,  /**< Time-share scheduling (IRIX DEFAULT)   */
+	SCHEDULE_FIFO,        /**< First in, First out scheduling         */
+	SCHEDULE_ROUND_ROBIN, /**< Round-robin scheduling (LINUX_DEFAULT) */ 
+	SCHEDULE_DEFAULT      /**< Default scheduling                     */
+};
+
+#define SCHEDULE_UNKNOWN_STR          BDIO_STRINGIZE(SCHEDULE_UNKNOWN)
+#define SCHEDULE_FIFO_STR             BDIO_STRINGIZE(SCHEDULE_FIFO)
+#define SCHEDULE_ROUND_ROBIN_STR      BDIO_STRINGIZE(SCHEDULE_ROUND_ROBIN)
+#define SCHEDULE_TIME_SHARE_STR       BDIO_STRINGIZE(SCHEDULE_TIME_SHARE)
+#define SCHEDULE_DEFAULT_STR          BDIO_STRINGIZE(SCHEDULE_DEFAULT)
+
+/**
+ *  Set the current thread's schedule priority.  This is a complex method.
+ *  Beware of thread priorities when using a many-to-many kernel
+ *  entity implemenation (such as IRIX pthreads).  If one is not carefull
+ *  to manage the thread priorities, a priority inversion deadlock can
+ *  easily occur Unless you have explicit need to set the schedule 
+ *  priorites for a given task, it is best to leave them alone.
+ *
+ *  @note some implementations (notably LinuxThreads and IRIX Sprocs) 
+ *  only alow you to decrease thread priorities dynamically.  Thus,
+ *  a lower priority thread will not allow it's priority to be raised
+ *  on the fly.  
+ *
+ *  @return BD_SUCCESS if normal.
+ */
+BDIO_API BDError SetCurrentSchedulePriority(ThreadPriority priority);
+BDIO_API BDError SetCurrentSchedulePriority(const std::string& priority);
+
+BDIO_API ThreadPriority ThreadPriorityFromString(const std::string& priority) ;
+BDIO_API std::string ThreadPriorityToString(ThreadPriority priority) ;
+
+
+/**
+ *  Get the thread's schedule priority (if able)
+ *
+ *
+ *  @return thread priority if normal, PRIORITY_UNKNOWN if error and BD_GetError set.
+ */
+BDIO_API ThreadPriority GetCurrentSchedulePriority();
+
+/**
+ *  Set the thread's scheduling policy (if able)
+ *  
+ *  @note On some implementations (notably IRIX Sprocs & LinuxThreads) 
+ *  The policy may prohibit the use of SCHEDULE_ROUND_ROBIN and
+ *  SCHEDULE_FIFO policies - due to their real-time nature, and 
+ *  the danger of deadlocking the machine when used as super-user.  
+ *  In such cases, the command is a no-op.
+ *
+ *  @return BD_SUCCESS if normal.
+ */
+BDIO_API BDError SetCurrentSchedulePolicy(ThreadPolicy policy);
+BDIO_API BDError SetCurrentSchedulePolicy(const std::string& policy);
+
+BDIO_API ThreadPolicy ThreadPolicyFromString(const std::string& policy) ;
+BDIO_API std::string ThreadPolicyToString(ThreadPolicy policy) ;
+
+
+
+/**
+ *  Get the thread's policy (if able)
+ *
+ *  @return policy if normal, SCHEDULE_UNKNOWN if error and BD_GetError set.
+ */
+BDIO_API ThreadPolicy GetCurrentSchedulePolicy();
+
+struct ThreadPriorityEntry
+{
+	const char * name ;
+	ThreadPriority priority ;
+} ;
+
+ThreadPriorityEntry threadPriorityTable[] = {
+	{PRIORITY_UNKNOWN_STR,    PRIORITY_UNKNOWN},
+	{PRIORITY_MAX_STR,        PRIORITY_MAX},
+	{PRIORITY_HIGH_STR,       PRIORITY_HIGH},
+	{PRIORITY_NOMINAL_STR,    PRIORITY_NOMINAL},
+	{PRIORITY_LOW_STR,        PRIORITY_LOW},
+	{PRIORITY_MIN_STR,        PRIORITY_MIN},
+	{PRIORITY_DEFAULT_STR,    PRIORITY_DEFAULT}
+} ;
+
+struct ThreadPolictEntry
+{
+	const char * name ;
+	ThreadPolicy policy ;
+} ;
+
+ThreadPolictEntry threadPolicyTable[] = {
+	{SCHEDULE_UNKNOWN_STR,      SCHEDULE_UNKNOWN},
+	{SCHEDULE_FIFO_STR,         SCHEDULE_FIFO},
+	{SCHEDULE_ROUND_ROBIN_STR,  SCHEDULE_ROUND_ROBIN},
+	{SCHEDULE_TIME_SHARE_STR,   SCHEDULE_TIME_SHARE},
+	{SCHEDULE_DEFAULT_STR,      SCHEDULE_DEFAULT}
+} ;
+
+ThreadPriority ThreadPriorityFromString(const std::string& priority)
+{
+	ThreadPriority answer = PRIORITY_UNKNOWN ;
+	int th_priority = 0 ;
+	ssize_t rv = BD_sscanf(priority.c_str(), "%d", &th_priority) ;
+	if(rv == 1)
+	{
+		answer = ThreadPriority(th_priority) ;
+	} else
+	{
+		for(size_t i=0; i < _countof(threadPriorityTable); i++)
+		{
+			if(threadPriorityTable[i].name == priority)
+			{
+				answer = threadPriorityTable[i].priority ;
+				break ;
+			}
+		}
+	}
+	return answer ;
+}
+std::string ThreadPriorityToString(ThreadPriority priority)
+{
+	std::string answer = PRIORITY_UNKNOWN_STR ;
+	for(size_t i=0; i < _countof(threadPriorityTable); i++)
+	{
+		if(threadPriorityTable[i].priority == priority)
+		{
+			answer = threadPriorityTable[i].name ;
+			break ;
+		}
+	}
+	return answer ;
+	
+}
+
+ThreadPolicy ThreadPolicyFromString(const std::string& policy)
+{
+	ThreadPolicy answer = SCHEDULE_UNKNOWN ;
+	int th_policy = 0 ;
+	ssize_t rv = BD_sscanf(policy.c_str(), "%d", &th_policy) ;
+	if(rv == 1)
+	{
+		answer = ThreadPolicy(th_policy) ;
+	} else
+	{
+		for(size_t i=0; i < _countof(threadPolicyTable); i++)
+		{
+			if(threadPolicyTable[i].name == policy)
+			{
+				answer = threadPolicyTable[i].policy ;
+				break ;
+			}
+		}
+	}
+	return answer ;
+}
+std::string ThreadPolicyToString(ThreadPolicy policy)
+{
+	std::string answer = SCHEDULE_UNKNOWN_STR ;
+	for(size_t i=0; i < _countof(threadPolicyTable); i++)
+	{
+		if(threadPolicyTable[i].policy == policy)
+		{
+			answer = threadPolicyTable[i].name ;
+			break ;
+		}
+	}
+	return answer ;
+}
+
+BDError SetCurrentSchedulePriority(const std::string& priority)
+{
+	BDError answer = BD_SUCCESS ;
+	int th_priority = 0 ;
+	ssize_t rv = BD_sscanf(priority.c_str(), "%d", &th_priority) ;
+	if(rv == 1)
+	{
+		int th_policy = 0 ;
+		sched_param th_param;
+		pthread_getschedparam(pthread_self(), &th_policy, &th_param);
+		int max_priority = sched_get_priority_max(th_policy);
+		int min_priority = sched_get_priority_min(th_policy);
+		if(th_priority >= min_priority && th_priority <= max_priority)
+		{
+			th_param.sched_priority = th_priority;
+			int result = pthread_setschedparam(pthread_self(), th_policy, &th_param);
+			if(result != 0)
+			{
+				answer = BD_GetError() ;
+			}
+		}
+	} else
+	{
+		answer = SetCurrentSchedulePriority(ThreadPriorityFromString(priority)) ;
+	}
+	return answer ;
+}
+BDError SetCurrentSchedulePolicy(const std::string& policy)
+{
+	return SetCurrentSchedulePolicy(ThreadPolicyFromString(policy)) ;
+}
+
+BDError SetCurrentSchedulePriority(ThreadPriority priority)
+{
+	BDError answer = BD_SUCCESS ;
+	if(priority != PRIORITY_DEFAULT /* && priority != PRIORITY_UNKNOWN */)
+	{
+		int th_policy = 0 ;
+		sched_param th_param;
+		pthread_getschedparam(pthread_self(), &th_policy, &th_param);
+
+		int max_priority = sched_get_priority_max(th_policy);
+		int min_priority = sched_get_priority_min(th_policy);
+		int nominal_priority = (max_priority + min_priority)/2;
+
+		switch(priority) {
+		
+			case PRIORITY_MAX:
+				th_param.sched_priority = max_priority;
+				break;
+			
+			case PRIORITY_HIGH:
+				th_param.sched_priority = (max_priority + nominal_priority)/2;
+				break;
+			
+			case PRIORITY_NOMINAL:
+				th_param.sched_priority = nominal_priority;
+				break;   
+			
+			case PRIORITY_LOW:
+				th_param.sched_priority = (min_priority + nominal_priority)/2;
+				break;       
+			
+			case PRIORITY_MIN:
+				th_param.sched_priority = min_priority;
+				break;   
+			
+			case PRIORITY_DEFAULT:
+				th_param.sched_priority = nominal_priority;
+				break;   
+			
+			default:
+				th_param.sched_priority = min_priority;
+				break;  
+		
+		}
+		 
+		int rv = pthread_setschedparam(pthread_self(), th_policy, &th_param);
+		if(rv != 0)
+		{
+			answer = BD_GetError() ;
+		}
+	}
+
+	return answer ;
+}
+ThreadPriority GetCurrentSchedulePriority()
+{
+	ThreadPriority answer = PRIORITY_UNKNOWN ;
+
+	return answer ;
+}
+BDError SetCurrentSchedulePolicy(ThreadPolicy policy)
+{
+	BDError answer = BD_SUCCESS ;
+
+	if(policy != SCHEDULE_DEFAULT /* && policy != SCHEDULE_UNKNOWN */)
+	{
+		int th_policy = SCHED_OTHER ;
+		sched_param th_param;
+		pthread_getschedparam(pthread_self(), &th_policy, &th_param);
+		int max_priority = sched_get_priority_max(policy);
+		int min_priority = sched_get_priority_min(policy);
+		int nominal_priority = (max_priority + min_priority)/2;
+
+		switch(policy) 
+		{
+			case SCHEDULE_FIFO:
+				th_policy = SCHED_FIFO;
+				th_param.sched_priority = nominal_priority;
+				break;
+
+			case SCHEDULE_ROUND_ROBIN:
+				th_policy = SCHED_RR;
+				th_param.sched_priority = nominal_priority;
+				break;
+
+			case SCHEDULE_TIME_SHARE:
+				th_policy = SCHED_OTHER;
+				th_param.sched_priority = 0;
+				break;
+
+			case SCHEDULE_DEFAULT:
+				th_policy = SCHED_OTHER;
+				th_param.sched_priority = 0;
+				break;
+
+			default:
+#ifdef __sgi
+				th_policy = SCHED_RR;
+#else
+				th_policy = SCHED_OTHER;
+				th_param.sched_priority = 0;
+#endif
+				break;
+		};
+
+		int rv = pthread_setschedparam(pthread_self(), th_policy, &th_param);
+		if(rv != 0)
+		{
+			answer = BD_GetError() ;
+		}
+	}
+	return answer ;
+}
+ThreadPolicy GetCurrentSchedulePolicy()
+{
+	ThreadPolicy answer = SCHEDULE_UNKNOWN ;
+	return answer ;
+}
+
 
 /*
  * CPUID instruction 0xb ebx info.
@@ -74,7 +447,6 @@ static const char * perf_test_type_str(perf_test_type_t test_type) {
 		break;
 	}
 }
-
 
 struct sk_Msg {
     uint16_t sk_flags;		/* exception state && flags */
@@ -140,10 +512,6 @@ lock_test_get_available_memsize(void)
 }
 
 #define tsc_freq (sk_cycles_per_msec * 1000UL)
-
-#ifndef _countof
-#define _countof(x) (sizeof(x) / sizeof(x[0]))
-#endif
 
 typedef struct {
     uint64_t total_cycles;
@@ -420,7 +788,7 @@ static void* lock_test_thread(void * arg) {
 	uint64_t cpuid = (uint64_t)arg;
 	thread_info_t * my_thread_info = &thread_infos[cpuid];
 	int ret = 0;
-#ifndef ONNIX
+
     cpu_set_t currentCPU;
     CPU_ZERO(&currentCPU);
 
@@ -432,7 +800,11 @@ static void* lock_test_thread(void * arg) {
 //    sk_bind_processor_pid(sk_my_pid(), (int)cpuid % lock_test_npcpu());
     sched_yield();
 	ASSERT(sched_getcpu() == (cpuid % lock_test_npcpu()));
-#endif
+	ret = SetCurrentSchedulePriority(PRIORITY_MAX);
+	if(ret != 0) {
+		perror("SetCurrentSchedulePriority");
+	}
+	ASSERT(ret = 0);
 #if defined(__APPLE__)
     ret = pthread_setname_np(my_thread_info->t_name);
 #elif defined(__linux__)
@@ -830,6 +1202,7 @@ int main(int argc, char **argv) {
 		switch(ch) {
 		case 'p':
 			secs_to_run = strtoul(optarg, NULL, 10);
+                        break;
 		default:
 			memperf_usage();
 			return 1;
