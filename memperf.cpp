@@ -800,16 +800,22 @@ static void* lock_test_thread(void * arg) {
 //    sk_bind_processor_pid(sk_my_pid(), (int)cpuid % lock_test_npcpu());
     sched_yield();
 	ASSERT(sched_getcpu() == (cpuid % lock_test_npcpu()));
+	ret = SetCurrentSchedulePolicy(SCHEDULE_FIFO);
+	if(ret != 0) {
+		perror("SetCurrentSchedulePolicy");
+	}
+	ASSERT(ret == 0);
 	ret = SetCurrentSchedulePriority(PRIORITY_MAX);
 	if(ret != 0) {
 		perror("SetCurrentSchedulePriority");
 	}
-	ASSERT(ret = 0);
+	ASSERT(ret == 0);
 #if defined(__APPLE__)
     ret = pthread_setname_np(my_thread_info->t_name);
 #elif defined(__linux__)
     ret = pthread_setname_np(pthread_self(), my_thread_info->t_name);
 #endif
+    printf("%s running on thread %d\n", my_thread_info->t_name, sched_getcpu());
 
 	unsigned p[4];
 	cpuid_count(0, 0, p);
@@ -873,6 +879,7 @@ static void* lock_test_thread(void * arg) {
 		//printf("%2lu.%12lu: Waiting for start msg\n", cpuid, get_cyclecount());
 		sk_Msg *async_msg = (sk_Msg*)sk_receive_msg(my_thread_info);
 		ASSERT(async_msg != NULL);
+		ASSERT(sched_getcpu() == (cpuid % lock_test_npcpu()));
 		sk_atomics_pair_padded_t *lock_pair = (sk_atomics_pair_padded_t *)async_msg->data.p;
 		delete async_msg;
 		async_msg = NULL;
