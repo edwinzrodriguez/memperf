@@ -936,7 +936,7 @@ static void* lock_test_thread(void * arg) {
 				break;
 			}
 			}
-			int c = (((max_loop_count - min_loop_count + 1) * rand()) / RAND_MAX) + min_loop_count;
+			int c = 0; //(((max_loop_count - min_loop_count + 1) * rand()) / RAND_MAX) + min_loop_count;
 			int n;
 			uint64_t sum=0;
 			for(n = 0; n < c; n++) {
